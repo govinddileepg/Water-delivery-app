@@ -37,9 +37,9 @@ credentials = {
 # Plaintext passwords for this prototype: 
 # john_doe -> "resident123"
 # water_vendor -> "delivery123"
-# (We pre-hash them here so they are secure)
-credentials['usernames']['john_doe']['password'] = stauth.Hasher(['resident123']).generate()[0]
-credentials['usernames']['water_vendor']['password'] = stauth.Hasher(['delivery123']).generate()[0]
+# The new way to hash plaintext passwords in version 0.3.x
+credentials['usernames']['john_doe']['password'] = stauth.Hasher.hash('resident123')
+credentials['usernames']['water_vendor']['password'] = stauth.Hasher.hash('delivery123')
 
 # Initialize the authenticator component
 authenticator = stauth.Authenticate(
