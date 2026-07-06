@@ -50,7 +50,9 @@ authenticator = stauth.Authenticate(
 )
 
 # --- RENDER LOGIN INTERFACE ---
-name, authentication_status, username = authenticator.login('main')
+# We explicitly tell it to render on the main page, not the sidebar
+fields = {"Form name": "Login", "Username": "Username", "Password": "Password", "Login": "Login"}
+name, authentication_status, username = authenticator.login(location='main', fields=fields)
 
 # ========================================================
 # LOGIC BLOCK BASED ON LOGIN STATUS
