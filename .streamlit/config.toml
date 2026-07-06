@@ -1,0 +1,9 @@
+[client]
+# This changes the default title and branding of the web app element
+toolbarMode = "minimal"
+
+[theme]
+primaryColor = "#00a8ff"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f5f6fa"
+textColor = "#2f3640"

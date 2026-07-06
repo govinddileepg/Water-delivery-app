@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS orders (
 conn.commit()
 
 # --- APP CONFIGURATION ---
-st.set_page_config(page_title="Water Drop", page_icon="💧", layout="centered")
+st.set_page_config(page_title="Water Drop Delivery", page_icon="💧", layout="centered")
 st.title("💧 Water Drop Delivery")
 
 # --- USER SELECTION ---
