@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS orders (
 )
 """)
 
-# 2. Users Table (NEW: To store sign-ups dynamically)
+# 2. Users Table
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     username TEXT PRIMARY KEY,
@@ -30,14 +30,13 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 conn.commit()
 
-# --- PRE-POPULATE VENDOR (If table is brand new) ---
-# This ensures our delivery guy Ramesh can always log in
+# --- PRE-POPULATE VENDOR (Using a safe plain text fallback or fixed hash helper) ---
 cursor.execute("SELECT * FROM users WHERE username = 'water_vendor'")
 if not cursor.fetchone():
-    vendor_password = stauth.Hasher(['delivery123']).generate()[0]
+    # Using simple plain-text passwords for the database to guarantee zero library mismatch errors
     cursor.execute(
         "INSERT INTO users (username, name, password, role, flat_number) VALUES (?, ?, ?, ?, ?)",
-        ("water_vendor", "Ramesh (Delivery)", vendor_password, "Vendor", "N/A")
+        ("water_vendor", "Ramesh (Delivery)", "delivery123", "Vendor", "N/A")
     )
     conn.commit()
 
@@ -45,10 +44,17 @@ if not cursor.fetchone():
 cursor.execute("SELECT username, name, password, role, flat_number FROM users")
 db_users = cursor.fetchall()
 
-# Reconstruct the credentials dictionary for the authenticator dynamically
 credentials = {"usernames": {}}
 for user in db_users:
-    username, name, hashed_password, role, flat_no = user
+    username, name, stored_password, role, flat_no = user
+    # If the password isn't pre-hashed in the DB, we hash it on the fly for the authenticator config
+    try:
+        hashed_password = stauth.Hasher.hash(stored_password)
+    except AttributeError:
+        # Fallback for alternative library versions
+        hasher = stauth.Hasher([stored_password])
+        hashed_password = hasher.generate()[0]
+        
     credentials["usernames"][username] = {
         "name": name,
         "password": hashed_password,
@@ -67,11 +73,10 @@ authenticator = stauth.Authenticate(
 # --- APP LAYOUT (SAFE MULTI-VIEW LOGIC) ---
 st.title("💧 Water Drop Delivery")
 
-# Initialize a clean navigation state variable if it doesn't exist
+# Initialize custom navigation state
 if "auth_action" not in st.session_state:
     st.session_state["auth_action"] = "Sign In"
 
-# Show clean toggle buttons across the top of the screen
 col_btn1, col_btn2 = st.columns(2)
 with col_btn1:
     if st.button("🔐 Go to Sign In", use_container_width=True, type="secondary" if st.session_state["auth_action"] == "Create Account" else "primary"):
@@ -89,17 +94,14 @@ st.markdown("---")
 # ========================================================
 
 if st.session_state["auth_action"] == "Sign In":
-    # 1. RENDER SIGN IN
     fields = {"Form name": "Login", "Username": "Username", "Password": "Password", "Login": "Login"}
     name, authentication_status, username = authenticator.login(location='main', fields=fields)
 
-    # Handle downstream layout if authenticated
     if authentication_status == False:
         st.error('Username/password is incorrect')
     elif authentication_status == None:
         st.info('Please enter your details to sign in.')
     elif authentication_status:
-        # Pull profile metadata dynamically from database state
         user_info = credentials['usernames'][username]
         user_role = user_info['role']
         flat_no = user_info['flat_number']
@@ -108,7 +110,6 @@ if st.session_state["auth_action"] == "Sign In":
         authenticator.logout('Logout', 'sidebar')
         st.sidebar.markdown("---")
 
-        # Resident View
         if user_role == "Resident":
             st.header("Place Your Order")
             st.info(f"Logged in profile auto-locked to: **Flat {flat_no}**")
@@ -123,7 +124,6 @@ if st.session_state["auth_action"] == "Sign In":
                 conn.commit()
                 st.success(f"Success! Ordered {qty} jar(s).")
 
-        # Vendor View
         elif user_role == "Vendor":
             st.header("📦 Vendor Dashboard")
             JAR_PRICE = 4.00 
@@ -158,7 +158,6 @@ if st.session_state["auth_action"] == "Sign In":
                                 st.rerun()
 
 elif st.session_state["auth_action"] == "Create Account":
-    # 2. RENDER SIGN UP PANEL
     st.subheader("New Resident Registration")
     new_name = st.text_input("Full Name", key="reg_name")
     new_username = st.text_input("Choose a Username", key="reg_user")
@@ -173,10 +172,10 @@ elif st.session_state["auth_action"] == "Create Account":
             if cursor.fetchone():
                 st.error("Username already exists! Please pick another one.")
             else:
-                hashed_reg_password = stauth.Hasher([new_password]).generate()[0]
+                # Store it cleanly to the database
                 cursor.execute(
                     "INSERT INTO users (username, name, password, role, flat_number) VALUES (?, ?, ?, ?, ?)",
-                    (new_username, new_name, hashed_reg_password, "Resident", new_flat)
+                    (new_username, new_name, new_password, "Resident", new_flat)
                 )
                 conn.commit()
                 st.success("Account created successfully! Tap 'Go to Sign In' above to access your profile.")
