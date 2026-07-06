@@ -30,10 +30,9 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 conn.commit()
 
-# --- PRE-POPULATE VENDOR (Using a safe plain text fallback or fixed hash helper) ---
+# --- PRE-POPULATE VENDOR ---
 cursor.execute("SELECT * FROM users WHERE username = 'water_vendor'")
 if not cursor.fetchone():
-    # Using simple plain-text passwords for the database to guarantee zero library mismatch errors
     cursor.execute(
         "INSERT INTO users (username, name, password, role, flat_number) VALUES (?, ?, ?, ?, ?)",
         ("water_vendor", "Ramesh (Delivery)", "delivery123", "Vendor", "N/A")
@@ -47,22 +46,16 @@ db_users = cursor.fetchall()
 credentials = {"usernames": {}}
 for user in db_users:
     username, name, stored_password, role, flat_no = user
-    # If the password isn't pre-hashed in the DB, we hash it on the fly for the authenticator config
-    try:
-        hashed_password = stauth.Hasher.hash(stored_password)
-    except AttributeError:
-        # Fallback for alternative library versions
-        hasher = stauth.Hasher([stored_password])
-        hashed_password = hasher.generate()[0]
-        
+    # We pass the password to the authenticator directly.
+    # The library handles the hashing internal encryption on its own!
     credentials["usernames"][username] = {
         "name": name,
-        "password": hashed_password,
+        "password": stored_password,
         "role": role,
         "flat_number": flat_no
     }
 
-# Initialize the authenticator component
+# Initialize the authenticator component (Using internal automatic hashing logic)
 authenticator = stauth.Authenticate(
     credentials,
     "water_delivery_cookie",
@@ -73,7 +66,6 @@ authenticator = stauth.Authenticate(
 # --- APP LAYOUT (SAFE MULTI-VIEW LOGIC) ---
 st.title("💧 Water Drop Delivery")
 
-# Initialize custom navigation state
 if "auth_action" not in st.session_state:
     st.session_state["auth_action"] = "Sign In"
 
@@ -172,7 +164,7 @@ elif st.session_state["auth_action"] == "Create Account":
             if cursor.fetchone():
                 st.error("Username already exists! Please pick another one.")
             else:
-                # Store it cleanly to the database
+                # Save plain text directly, letting stauth handle any hashing operations on data load
                 cursor.execute(
                     "INSERT INTO users (username, name, password, role, flat_number) VALUES (?, ?, ?, ?, ?)",
                     (new_username, new_name, new_password, "Resident", new_flat)
