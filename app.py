@@ -1,3 +1,66 @@
+import streamlit as st
+import sqlite3
+import streamlit_authenticator as stauth
+from datetime import datetime
+
+# --- DATABASE SETUP ---
+conn = sqlite3.connect("water_delivery.db", check_same_thread=False)
+cursor = conn.cursor()
+
+# 1. Orders Table
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    flat_number TEXT,
+    quantity INTEGER,
+    timestamp TEXT,
+    status TEXT
+)
+""")
+
+# 2. Users Table
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    username TEXT PRIMARY KEY,
+    name TEXT,
+    password TEXT,
+    role TEXT,
+    flat_number TEXT
+)
+""")
+conn.commit()
+
+# --- PRE-POPULATE VENDOR ---
+cursor.execute("SELECT * FROM users WHERE username = 'water_vendor'")
+if not cursor.fetchone():
+    cursor.execute(
+        "INSERT INTO users (username, name, password, role, flat_number) VALUES (?, ?, ?, ?, ?)",
+        ("water_vendor", "Ramesh (Delivery)", "delivery123", "Vendor", "N/A")
+    )
+    conn.commit()
+
+# --- LOAD USERS DYNAMICALLY FROM DATABASE ---
+cursor.execute("SELECT username, name, password, role, flat_number FROM users")
+db_users = cursor.fetchall()
+
+credentials = {"usernames": {}}
+for user in db_users:
+    username, name, stored_password, role, flat_no = user
+    credentials["usernames"][username] = {
+        "name": name,
+        "password": stored_password,
+        "role": role,
+        "flat_number": flat_no
+    }
+
+# Initialize the authenticator component
+authenticator = stauth.Authenticate(
+    credentials,
+    "water_drop_cookie_v2", 
+    "abcdef",
+    cookie_expiry_days=30
+)
+
 # --- APP LAYOUT (SAFE MULTI-VIEW LOGIC) ---
 st.title("💧 Water Drop Delivery")
 
@@ -113,16 +176,14 @@ elif st.session_state["auth_action"] == "Create Account":
                 st.balloons()
 
 # ========================================================
-# NEW: PASSWORD RESET / FORGOT WIDGET
+# PASSWORD RESET / FORGOT WIDGET
 # ========================================================
 elif st.session_state["auth_action"] == "Forgot Password":
     try:
-        # Render the built-in forgot password form layout
         forgot_fields = {'Form name': 'Reset Forgotten Password', 'Username': 'Enter Your Username', 'Submit': 'Generate New Password'}
         forgot_user, forgot_email, new_random_password = authenticator.forgot_password(location='main', fields=forgot_fields)
         
         if forgot_user:
-            # Update the database with the newly generated temporary password string
             cursor.execute("UPDATE users SET password = ? WHERE username = ?", (new_random_password, forgot_user))
             conn.commit()
             
