@@ -1,82 +1,22 @@
-import streamlit as st
-import sqlite3
-import streamlit_authenticator as stauth
-from datetime import datetime
-
-# --- DATABASE SETUP ---
-conn = sqlite3.connect("water_delivery.db", check_same_thread=False)
-cursor = conn.cursor()
-
-# 1. Orders Table
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    flat_number TEXT,
-    quantity INTEGER,
-    timestamp TEXT,
-    status TEXT
-)
-""")
-
-# 2. Users Table
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    username TEXT PRIMARY KEY,
-    name TEXT,
-    password TEXT,
-    role TEXT,
-    flat_number TEXT
-)
-""")
-conn.commit()
-
-# --- PRE-POPULATE VENDOR ---
-cursor.execute("SELECT * FROM users WHERE username = 'water_vendor'")
-if not cursor.fetchone():
-    cursor.execute(
-        "INSERT INTO users (username, name, password, role, flat_number) VALUES (?, ?, ?, ?, ?)",
-        ("water_vendor", "Ramesh (Delivery)", "delivery123", "Vendor", "N/A")
-    )
-    conn.commit()
-
-# --- LOAD USERS DYNAMICALLY FROM DATABASE ---
-cursor.execute("SELECT username, name, password, role, flat_number FROM users")
-db_users = cursor.fetchall()
-
-credentials = {"usernames": {}}
-for user in db_users:
-    username, name, stored_password, role, flat_no = user
-    # We pass the password to the authenticator directly.
-    # The library handles the hashing internal encryption on its own!
-    credentials["usernames"][username] = {
-        "name": name,
-        "password": stored_password,
-        "role": role,
-        "flat_number": flat_no
-    }
-
-# Initialize the authenticator component (Using internal automatic hashing logic)
-authenticator = stauth.Authenticate(
-    credentials,
-    "water_delivery_cookie",
-    "abcdef",
-    cookie_expiry_days=30
-)
-
 # --- APP LAYOUT (SAFE MULTI-VIEW LOGIC) ---
 st.title("💧 Water Drop Delivery")
 
 if "auth_action" not in st.session_state:
     st.session_state["auth_action"] = "Sign In"
 
-col_btn1, col_btn2 = st.columns(2)
+# Render 3 toggle buttons across the top header
+col_btn1, col_btn2, col_btn3 = st.columns(3)
 with col_btn1:
-    if st.button("🔐 Go to Sign In", use_container_width=True, type="secondary" if st.session_state["auth_action"] == "Create Account" else "primary"):
+    if st.button("🔐 Go to Sign In", use_container_width=True, type="secondary" if st.session_state["auth_action"] != "Sign In" else "primary"):
         st.session_state["auth_action"] = "Sign In"
         st.rerun()
 with col_btn2:
-    if st.button("📝 Go to Create Account", use_container_width=True, type="secondary" if st.session_state["auth_action"] == "Sign In" else "primary"):
+    if st.button("📝 Create Account", use_container_width=True, type="secondary" if st.session_state["auth_action"] != "Create Account" else "primary"):
         st.session_state["auth_action"] = "Create Account"
+        st.rerun()
+with col_btn3:
+    if st.button("🔑 Forgot Password", use_container_width=True, type="secondary" if st.session_state["auth_action"] != "Forgot Password" else "primary"):
+        st.session_state["auth_action"] = "Forgot Password"
         st.rerun()
 
 st.markdown("---")
@@ -164,7 +104,6 @@ elif st.session_state["auth_action"] == "Create Account":
             if cursor.fetchone():
                 st.error("Username already exists! Please pick another one.")
             else:
-                # Save plain text directly, letting stauth handle any hashing operations on data load
                 cursor.execute(
                     "INSERT INTO users (username, name, password, role, flat_number) VALUES (?, ?, ?, ?, ?)",
                     (new_username, new_name, new_password, "Resident", new_flat)
@@ -172,3 +111,25 @@ elif st.session_state["auth_action"] == "Create Account":
                 conn.commit()
                 st.success("Account created successfully! Tap 'Go to Sign In' above to access your profile.")
                 st.balloons()
+
+# ========================================================
+# NEW: PASSWORD RESET / FORGOT WIDGET
+# ========================================================
+elif st.session_state["auth_action"] == "Forgot Password":
+    try:
+        # Render the built-in forgot password form layout
+        forgot_fields = {'Form name': 'Reset Forgotten Password', 'Username': 'Enter Your Username', 'Submit': 'Generate New Password'}
+        forgot_user, forgot_email, new_random_password = authenticator.forgot_password(location='main', fields=forgot_fields)
+        
+        if forgot_user:
+            # Update the database with the newly generated temporary password string
+            cursor.execute("UPDATE users SET password = ? WHERE username = ?", (new_random_password, forgot_user))
+            conn.commit()
+            
+            st.warning("⚠️ Write down your temporary password immediately!")
+            st.code(new_random_password, language="text")
+            st.success("Database successfully updated! Click 'Go to Sign In' above and use this temporary password to enter.")
+        elif forgot_user == False:
+            st.error('Username not found in the resident directory.')
+    except Exception as e:
+        st.error(f"Execution Error: {e}")
